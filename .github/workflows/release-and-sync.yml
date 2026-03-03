@@ -46,13 +46,20 @@ jobs:
 
       # Creates a GitHub Release on the private repo, auto-generating
       # release notes from merged PRs and commits since the last release.
-      - name: Create GitHub Release
+      # Notes are saved to a file so the public repo release can reuse them.
+      - name: Create GitHub Release on private repo
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           gh release create "${{ steps.tag.outputs.new_tag }}" \
             --title "Release ${{ steps.tag.outputs.new_tag }}" \
-            --generate-notes
+            --generate-notes \
+            --repo ${{ github.repository }}
+          # Fetch the generated notes so we can mirror them to the public release
+          gh release view "${{ steps.tag.outputs.new_tag }}" \
+            --repo ${{ github.repository }} \
+            --json body \
+            --jq '.body' > release-notes.md
 
       # Mirrors the full commit history and tags to the public repo.
       # --force handles the first-run case where the public repo was initialized
@@ -64,3 +71,14 @@ jobs:
           git remote add public \
             https://x-access-token:${APP_TOKEN}@github.com/${{ github.repository_owner }}/test-public-csda.git
           git push public main --follow-tags --force
+
+      # Creates the same release on the public repo using the notes captured above.
+      # The tag was already pushed by --follow-tags in the previous step.
+      - name: Create GitHub Release on public repo
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh release create "${{ steps.tag.outputs.new_tag }}" \
+            --title "Release ${{ steps.tag.outputs.new_tag }}" \
+            --notes-file release-notes.md \
+            --repo ${{ github.repository_owner }}/test-public-csda
